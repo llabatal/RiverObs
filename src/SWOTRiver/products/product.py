@@ -18,7 +18,7 @@ import netCDF4 as nc
 import SWOTRiver.products.netcdf as netcdf
 from SWOTRiver.products.constants import FILL_VALUES
 
-FIELD_WARNING = 'uh-oh {}'
+FIELD_WARNING = "I'm afraid I can't do that. {} is not in {}"
 
 def textjoin(text):
     """Dedent join and strip text"""
@@ -36,46 +36,26 @@ def get_subclasses(cls):
     return products
 
 def sort_variable_attribute_odict(in_odict):
-    blessed_order = [
-        'dtype',
-        'dimensions',
-        'long_name',
-        'standard_name',
-        'calendar',
-        'time',
-        'standard_time',
-        'tai_utc_difference',
-        'leap_second',
-        'units',
-        'scale_factor',
-        'coordinates',
-        'quality_flag',
-        'flag_meanings',
-        'flag_values',
-        'valid_min',
-        'valid_max',
-        'comment',
-        ]
-
+    """Sorts attributes"""
     # These come first in this order
-    first_attrs = ['dtype', 'dimensions', 'long_name', 'standard_name',
+    FIRST_ATTRS = ['dtype', 'dimensions', 'long_name', 'standard_name',
                    'calendar', 'time', 'standard_time', 'tai_utc_difference',
                    'leap_second']
     # Then put in non-standard ones, and finally these ones in this order
-    last_attrs = ['units', 'scale_factor', 'coordinates', 'quality_flag',
+    LAST_ATTRS = ['units', 'scale_factor', 'coordinates', 'quality_flag',
                   'flag_meanings', 'flag_values', 'valid_min', 'valid_max',
                   'comment']
 
     attr_list = []
-    for key in first_attrs:
+    for key in FIRST_ATTRS:
         if key in in_odict:
             attr_list.append([key, in_odict[key]])
 
     for key in in_odict:
-        if key not in first_attrs and key not in last_attrs:
+        if key not in (FIRST_ATTRS+LAST_ATTRS):
             attr_list.append([key, in_odict[key]])
 
-    for key in last_attrs:
+    for key in LAST_ATTRS:
         if key in in_odict:
             attr_list.append([key, in_odict[key]])
     return odict(attr_list)
@@ -99,8 +79,9 @@ class Product(object):
         self._variables = odict()
         self._groups = odict()
         # reorder the attributes of the variables to the blessed order
-        for key,attr_odict in self.VARIABLES.items():
-            self.VARIABLES[key] = copy.deepcopy(sort_variable_attribute_odict(attr_odict))
+        for key, attr_odict in self.VARIABLES.items():
+            self.VARIABLES[key] = copy.deepcopy(
+                sort_variable_attribute_odict(attr_odict))
         # For bug finding
         assert isinstance(self.ATTRIBUTES, odict)
         assert isinstance(self.DIMENSIONS, odict)
@@ -163,7 +144,7 @@ class Product(object):
             new_product[key] = value.append(product[key])
         for key, variable in self._variables.items():
             if variable is not None:
-                new_product[key] = np.append(variable, product[key])
+                new_product[key] = np.append(variable, product[key], axis=0)
         return new_product
 
     def _copy(self, new_product, with_variables=True):
@@ -231,16 +212,18 @@ class Product(object):
             return self._groups[key]
         # Nothing in memory, return empty data
         if key in self.ATTRIBUTES:
-            return 'None'
+            return self.ATTRIBUTES[key].get('value', 'None')
         if key in self.VARIABLES:
             shape = []
             for dimension in self.VARIABLES[key]['dimensions']:
                 shape.append(self.dimensions[dimension])
             dtype = self.VARIABLES[key].get('dtype', np.float32)
             quantized_fill = self._getfill(key)
+            value = np.ones(shape, dtype=dtype)
+            value[:] = quantized_fill
             return np.ma.masked_array(
-                data=np.ones(shape)*quantized_fill, dtype=dtype,
-                fill_value=quantized_fill, mask=np.ones(shape))
+                data=value, dtype=dtype, fill_value=quantized_fill,
+                mask=np.ones(shape))
         if key in self.GROUPS:
             self[key] = self.get_product(self.GROUPS[key])()
             return self[key]

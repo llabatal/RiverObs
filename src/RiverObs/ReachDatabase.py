@@ -203,14 +203,20 @@ class ReachExtractor(object):
                 'lat': this_reach['reaches']['y'][0],
                 'centerline_lon': this_reach['centerlines']['x'],
                 'centerline_lat': this_reach['centerlines']['y'],
-                'area_fits': this_reach['reaches']['area_fits']}
+                'area_fits': this_reach['reaches']['area_fits'],
+                'discharge_models': this_reach['reaches']['discharge_models'],
+                'rch_id_up': this_reach['reaches']['rch_id_up'],
+                'rch_id_dn': this_reach['reaches']['rch_id_dn'],
+                'length': this_reach['reaches']['reach_length'],
+                }
 
             self.reach_idx.append(reach_idx)
             self.reach.append(RiverReach(
                 lon=lon, lat=lat, x=x, y=y, metadata=metadata,
                 reach_index=ii, node_indx=node_indx,
                 blocking_widths=blocking_widths,
-                width=this_reach['nodes']['width']))
+                width=this_reach['nodes']['width'],
+                length=this_reach['nodes']['node_length']))
 
         self.idx = 0
         self.nreaches = len(self.reach)
@@ -313,7 +319,9 @@ class ReachDatabaseNodes(Product):
 class ReachDatabaseReaches(Product):
     """Prior Reach database reaches"""
     ATTRIBUTES = odict([])
-    GROUPS = odict([['area_fits', 'ReachDatabaseReachAreaFits']])
+    GROUPS = odict([
+        ['area_fits', 'ReachDatabaseReachAreaFits'],
+        ['discharge_models', 'ReachDatabaseReachDischargeModels']])
 
     DIMENSIONS = odict([['centerlines', 2], ['reach_neighbors', 4], ['reaches', 0]])
     DIMENSIONS_CLIDS = odict([['centerlines', 2], ['reaches', 0]])
@@ -354,6 +362,7 @@ class ReachDatabaseReaches(Product):
         outputs = {
             key: self[key][..., mask] for key in self.VARIABLES.keys()}
         outputs['area_fits'] = self.area_fits(mask)
+        outputs['discharge_models'] = self.discharge_models(mask)
         return outputs
 
     def __add__(self, other):
@@ -368,6 +377,7 @@ class ReachDatabaseReaches(Product):
                 getattr(self, dset), getattr(other, dset)], 1))
 
         klass.area_fits = self.area_fits + other.area_fits
+        klass.discharge_models = self.discharge_models + other.discharge_models
         return klass
 
     def extract(self, bounding_box):
@@ -398,6 +408,32 @@ class ReachDatabaseReaches(Product):
                lonmin < reach_lonmax and lonmax > reach_lonmin):
                 overlapping_reach_ids.append(reach_id)
         return overlapping_reach_ids
+
+class ReachDatabaseReachDischargeModels(Product):
+    """class for prior reach database reach discharge_models datagroup"""
+    ATTRIBUTES = odict()
+    DIMENSIONS = odict([['reaches', 0]])
+    VARIABLES = odict([
+        ['MetroMan_Abar', odict([['dtype', 'f8'], ['dimensions', DIMENSIONS]])],
+        ['MetroMan_na', odict([['dtype', 'f8'], ['dimensions', DIMENSIONS]])],
+        ['MetroMan_nb', odict([['dtype', 'f8'], ['dimensions', DIMENSIONS]])],
+        ])
+
+    def __call__(self, mask):
+        """Returns dict of reach attributes for reach_id"""
+        # HACK alert, mask is injected by ReachDatabaseReaches class
+        # which is the parent group of this datagroup
+        outputs = {
+            key: self[key][mask] for key in self.VARIABLES.keys()}
+        return outputs
+
+    def __add__(self, other):
+        """Adds other to self"""
+        klass = ReachDatabaseReachDischargeModels()
+        for dset in self.VARIABLES.keys():
+            setattr(klass, dset, np.concatenate([
+                getattr(self, dset), getattr(other, dset)]))
+        return klass
 
 class ReachDatabaseReachAreaFits(Product):
     """class for prior reach database reach area_fits datagroup"""

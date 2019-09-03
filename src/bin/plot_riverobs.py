@@ -150,9 +150,9 @@ class ParamPlots(NodePlots):
 class HeightPlots(ParamPlots):
     def finalize(self):
         for axes in self.axes:
-            axes[0].set_ylabel('height (m)')
+            axes[0].set_ylabel('wse (m)')
             #axes[1].set_ylabel('height (m)')
-            axes[1].set_ylabel('height error (m), data-truth')
+            axes[1].set_ylabel('wse error (m), data-truth')
             axes[1].set_ylim(-0.5, 0.5)
             axes[1].set_yticks(np.linspace(-0.5, 0.5, 11))
             for i in [-1, 1]:
@@ -178,11 +178,11 @@ def plot_locations(
         truth, data, color_field='reach_id', title=None, tofile=False):
     figure, axis = plt.subplots(figsize=FIGSIZE, dpi=DPI)
     plot = axis.scatter(
-        data['longitude'], data['latitude'], s=50, c=data[color_field],
+        data['lon'], data['lat'], s=50, c=data[color_field],
         edgecolor='none')
     colorbar = plt.colorbar(plot)
     colorbar.set_label(color_field)
-    axis.scatter(truth['longitude'], truth['latitude'], marker='+', c='k')
+    axis.scatter(truth['lon'], truth['lat'], marker='+', c='k')
     axis.grid()
     axis.set_xlabel('longitude')
     axis.set_ylabel('latitude')

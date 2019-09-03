@@ -16,7 +16,7 @@ from shapely.geometry import Point, mapping, LineString
 from collections import OrderedDict as odict
 
 from SWOTRiver.products.pixcvec import L2PIXCVector
-from SWOTRiver.products.product import Product, FILL_VALUES, textjoin
+from SWOTWater.products.product import Product, FILL_VALUES, textjoin
 from RiverObs.RiverObs import \
     MISSING_VALUE_FLT, MISSING_VALUE_INT4, MISSING_VALUE_INT9
 
@@ -47,6 +47,19 @@ class L2HRRiverTile(Product):
         klass.reaches = RiverTileReaches.from_riverobs(
             reach_outputs, reach_collection)
         return klass
+
+    @classmethod
+    def from_shapes(cls, node_shape_path, reach_shape_path):
+        """Constructs self from shapefiles"""
+        klass = cls()
+        klass.nodes = RiverTileNodes.from_shapes(node_shape_path)
+        klass.reaches = RiverTileReaches.from_shapes(reach_shape_path)
+        return klass
+
+    def uncorrect_tides(self):
+        """Removes geoid, solid earth tide, pole tide, and load tide"""
+        self.nodes.uncorrect_tides()
+        self.reaches.uncorrect_tides()
 
     def update_from_pixc(self, pixc_file, index_file):
         """Adds more datasets from pixc_file file using index_file"""
@@ -96,6 +109,13 @@ class L2HRRiverTile(Product):
                           (nc_var-shp_var).std())
                 except (KeyError, AttributeError):
                     print(varname+" not found.")
+
+    def __add__(self, other):
+        """Adds other to self"""
+        klass = L2HRRiverTile()
+        klass.nodes = self.nodes + other.nodes
+        klass.reaches = self.reaches + other.reaches
+        return klass
 
 class ShapeWriterMixIn(object):
     """MixIn to support shapefile output"""
@@ -354,13 +374,13 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
                     seconds. The difference (in seconds) with time in UTC is
                     given by the metadata [time:tai_utc_difference].""")],
                 ])],
-        ['latitude',
+        ['lat',
          odict([['dtype', 'f8'],
                 ['long_name', 'latitude of centroid of water-detected pixels'],
                 ['standard_name', 'latitude'],
                 ['units', 'degrees_north'],
-                ['valid_min', -90],
-                ['valid_max', 90],
+                ['valid_min', -80],
+                ['valid_max', 80],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Basic'],
                 ['comment', textjoin("""
@@ -368,7 +388,7 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
                     assigned to the node.  Positive latitude values increase
                     northward from the equator.""")],
                 ])],
-        ['longitude',
+        ['lon',
          odict([['dtype', 'f8'],
                 ['long_name', 'longitude of centroid of water-detected pixels'],
                 ['standard_name', 'longitude'],
@@ -383,7 +403,7 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
                     more positive to the east and more negative to the west of
                     the Prime Meridian.""")],
                 ])],
-        ['latitude_u',
+        ['lat_u',
          odict([['dtype', 'f8'],
                 ['long_name', "uncertainty in the node latitude"],
                 ['units', 'degrees_north'],
@@ -395,7 +415,7 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
                     Total one-sigma uncertainty in the latitude of the centroid
                     of water-detected pixels assigned to the node.""")],
                 ])],
-        ['longitud_u',
+        ['lon_u',
          odict([['dtype', 'f8'],
                 ['long_name', 'uncertainty in the node longitude'],
                 ['units', 'degrees_east'],
@@ -594,8 +614,8 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
          odict([['dtype', 'f8'],
                 ['long_name', 'distance to the satellite ground track'],
                 ['units', 'm'],
-                ['valid_min', 10000],
-                ['valid_max', 65000],
+                ['valid_min', -75000],
+                ['valid_max', 75000],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Basic'],
                 ['comment', textjoin("""
@@ -716,8 +736,8 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
          odict([['dtype', 'f8'],
                 ['long_name', 'sigma0'],
                 ['units', '1'],
-                ['valid_min', -999999],
-                ['valid_max', 999999],
+                ['valid_min', -1],
+                ['valid_max', 1000],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
                 ['comment', textjoin("""
@@ -730,8 +750,8 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
          odict([['dtype', 'f8'],
                 ['long_name', 'uncertainty in sigma0'],
                 ['units', '1'],
-                ['valid_min', -999999],
-                ['valid_max', 999999],
+                ['valid_min', 0],
+                ['valid_max', 1000],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
                 ['comment', textjoin("""
@@ -747,8 +767,8 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
                 ['source', 'EGM2008'],
                 ['institution', 'GSFC'],
                 ['units', 'm'],
-                ['valid_min', -999999],
-                ['valid_max', 999999],
+                ['valid_min', -150],
+                ['valid_max', 150],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Basic'],
                 ['comment', textjoin("""
@@ -764,8 +784,8 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
                     Cartwright and Edden [1973] Corrected tables of tidal
                     harmonics - J. Geophys. J. R. Astr. Soc., 33, 253-264""")],
                 ['units', 'm'],
-                ['valid_min', -999999],
-                ['valid_max', 999999],
+                ['valid_min', -1],
+                ['valid_max', 1],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
                 ['comment', textjoin("""
@@ -777,15 +797,15 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
          odict([['dtype', 'f8'],
                 ['long_name', 'geocentric pole tide height'],
                 ['units', 'm'],
-                ['valid_min', -999999],
-                ['valid_max', 999999],
+                ['valid_min', -0.2],
+                ['valid_max', 0.2],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
                 ['comment', textjoin("""
                     Geocentric pole tide height.  The sum total of the
                     contribution from the solid-Earth (body) pole tide height
                     and the load pole tide height (i.e., the effect of the
-                    ocean pole tide loading of the Earth’s crust).""")],
+                    ocean pole tide loading of the Earth's crust).""")],
                 ])],
         ['load_tide1',
          odict([['dtype', 'f8'],
@@ -793,13 +813,13 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
                 ['source', 'FES2014'],
                 ['institution', 'LEGOS/CNES'],
                 ['units', 'm'],
-                ['valid_min', -999999],
-                ['valid_max', 999999],
+                ['valid_min', -0.2],
+                ['valid_max', 0.2],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
                 ['comment', textjoin("""
                     Geocentric load tide height. The effect of the ocean tide
-                    loading of the Earth’s crust. This value is used to compute
+                    loading of the Earth's crust. This value is used to compute
                     wse. The value is computed from the FES2014 ocean tide
                     model.""")],
                 ])],
@@ -809,13 +829,13 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
                 ['source', 'GOT4.10c'],
                 ['institution', 'GSFC'],
                 ['units', 'm'],
-                ['valid_min', -999999],
-                ['valid_max', 999999],
+                ['valid_min', -0.2],
+                ['valid_max', 0.2],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
                 ['comment', textjoin("""
                     Geocentric load tide height. The effect of the ocean tide
-                    loading of the Earth’s crust. The value is computed from
+                    loading of the Earth's crust. The value is computed from
                     the GOT4.10c ocean tide model.""")],
                 ])],
         ['dry_trop_c',
@@ -823,8 +843,8 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
                 ['long_name', 'dry tropospheric vertical correction to WSE'],
                 ['source', 'European Centre for Medium-Range Weather Forecasts'],
                 ['units', 'm'],
-                ['valid_min', -2.5],
-                ['valid_max', -2.0],
+                ['valid_min', -3.0],
+                ['valid_max', -1.5],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
                 ['comment', textjoin("""
@@ -839,7 +859,7 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
                 ['long_name', 'model wet tropospheric correction to WSE'],
                 ['source', 'European Centre for Medium-Range Weather Forecasts'],
                 ['units', 'm'],
-                ['valid_min', -0.5],
+                ['valid_min', -1],
                 ['valid_max', 0],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
@@ -852,9 +872,10 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
         ['iono_c',
          odict([['dtype', 'f8'],
                 ['long_name', 'ionospheric vertical correction to WSE'],
-                ['source', 'JPL Global Ionosphere Map'],
+                ['source', 'Global Ionosphere Maps'],
+                ['institution', 'JPL'],
                 ['units', 'm'],
-                ['valid_min', -0.1],
+                ['valid_min', -0.5],
                 ['valid_max', 0],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
@@ -862,14 +883,14 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
                     Equivalent vertical correction due to ionosphere delay.
                     Adding the reported correction to the reported reach WSE
                     results in the uncorrected reach WSE. The value is computed
-                    from JPL’s Global Ionosphere Map (GIM).""")],
+                    from the JPL Global Ionosphere Maps (GIM).""")],
                 ])],
         ['xovr_cal_c',
          odict([['dtype', 'f8'],
                 ['long_name', 'crossover calibration WSE correction'],
                 ['units', 'm'],
-                ['valid_min', -1000],
-                ['valid_max', 1000],
+                ['valid_min', -10],
+                ['valid_max', 10],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
                 ['comment', textjoin("""
@@ -1004,10 +1025,10 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
         if node_outputs is not None:
             klass['reach_id'] = node_outputs['reach_indx']
             klass['node_id'] = node_outputs['node_indx']
-            klass['latitude'] = node_outputs['lat']
-            klass['longitude'] = node_outputs['lon']
-            klass['latitude_u'] = node_outputs['latitude_u']
-            klass['longitud_u'] = node_outputs['longitud_u']
+            klass['lat'] = node_outputs['lat']
+            klass['lon'] = node_outputs['lon']
+            klass['lat_u'] = node_outputs['latitude_u']
+            klass['lon_u'] = node_outputs['longitud_u']
             klass['wse'] = node_outputs['wse']
             klass['wse_r_u'] = node_outputs['wse_std']
             klass['width'] = node_outputs['w_area']
@@ -1042,6 +1063,33 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
             klass['quality_f'][node_outputs['node_blocked']==1] |= 1
 
         return klass
+
+    @classmethod
+    def from_shapes(cls, shape_path):
+        """Constructs self from shapefiles"""
+        klass = cls()
+        with fiona.open(shape_path) as ifp:
+            records = list(ifp)
+        data = {}
+        data['lon_prior'] = np.array([
+            record['geometry']['coordinates'][0] for record in records])
+        data['lat_prior'] = np.array([
+            record['geometry']['coordinates'][1] for record in records])
+        for key, reference in klass.VARIABLES.items():
+            if key not in ['lat_prior', 'lon_prior']:
+                data[key] = np.array([
+                    record['properties'][key] for record in records])
+        for key, value in data.items():
+            setattr(klass, key, value)
+        return klass
+
+    def uncorrect_tides(self):
+        """Removes geoid, solid earth tide, pole tide, and load tide"""
+        mask = np.logical_and(
+            self.geoid_hght > -200, self.geoid_hght < 200)
+        self.wse[mask] += (
+            self.geoid_hght[mask] + self.solid_tide[mask] +
+            self.load_tide1[mask] + self.pole_tide[mask])
 
     def update_from_pixc(self, pixc_file, index_file):
         """Adds more datasets from pixc_file file using index_file"""
@@ -1081,8 +1129,8 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
             for reach_id in np.unique(self.reach_id):
                 for node_id in self.node_id[self.reach_id == reach_id]:
                     pixc_mask = np.logical_and(
-                        pixc_vec.reach_index == reach_id,
-                        pixc_vec.node_index == node_id)
+                        pixc_vec.reach_id == reach_id,
+                        pixc_vec.node_id == node_id)
 
                     out_mask = np.logical_and(
                         self.reach_id == reach_id, self.node_id == node_id)
@@ -1092,6 +1140,14 @@ class RiverTileNodes(Product, ShapeWriterMixIn):
 
             # stuff in product
             self[outkey] = outdata
+
+    def __add__(self, other):
+        """Adds other to self"""
+        klass = RiverTileNodes()
+        for key in klass.VARIABLES:
+            setattr(klass, key, np.concatenate((
+                getattr(self, key), getattr(other, key))))
+        return klass
 
 class RiverTileReaches(Product, ShapeWriterMixIn):
     ATTRIBUTES = RiverTileNodes.ATTRIBUTES
@@ -1138,13 +1194,13 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
                 ['tag_basic_expert', 'Basic'],
                 ['comment', textjoin("""""")],
                 ])],
-        ['p_latitud',
+        ['p_lat',
          odict([['dtype', 'f8'],
                 ['long_name', 'latitude of the center of the reach'],
                 ['standard_name', 'latitude'],
                 ['units', 'degrees_north'],
-                ['valid_min', -90],
-                ['valid_max', 90],
+                ['valid_min', -80],
+                ['valid_max', 80],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Basic'],
                 ['comment', textjoin("""
@@ -1152,7 +1208,7 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
                     database. Positive values increase northward of the
                     equator.""")],
                 ])],
-        ['p_longitud',
+        ['p_lon',
          odict([['dtype', 'f8'],
                 ['long_name', 'longitude of the center of the reach'],
                 ['standard_name', 'longitude'],
@@ -1454,8 +1510,8 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
                 ['long_name', textjoin("""
                     distance to the satellite ground track""")],
                 ['units', 'm'],
-                ['valid_min', -100000],
-                ['valid_max', 100000],
+                ['valid_min', -75000],
+                ['valid_max', 75000],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert','Basic'],
                 ['comment', textjoin("""
@@ -1682,8 +1738,8 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
                 ['source', 'EGM2008'],
                 ['institution', 'GSFC'],
                 ['units', 'm'],
-                ['valid_min', -999999],
-                ['valid_max', 999999],
+                ['valid_min', -150],
+                ['valid_max', 150],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert','Basic'],
                 ['comment', textjoin("""
@@ -1715,8 +1771,8 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
                     Cartwright and Edden [1973] Corrected tables of tidal
                     harmonics - J. Geophys. J. R. Astr. Soc., 33, 253-264""")],
                 ['units', 'm'],
-                ['valid_min', -999999],
-                ['valid_max', 999999],
+                ['valid_min', -1],
+                ['valid_max', 1],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert','Expert'],
                 ['comment', textjoin("""
@@ -1728,15 +1784,15 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
          odict([['dtype', 'f8'],
                 ['long_name', 'geocentric pole tide height'],
                 ['units', 'm'],
-                ['valid_min', -999999],
-                ['valid_max', 999999],
+                ['valid_min', -0.2],
+                ['valid_max', 0.2],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert','Expert'],
                 ['comment', textjoin("""
                     Geocentric pole tide height.  The sum total of the
                     contribution from the solid-Earth (body) pole tide height
                     and the load pole tide height (i.e., the effect of the
-                    ocean pole tide loading of the Earth’s crust).""")],
+                    ocean pole tide loading of the Earth's crust).""")],
                 ])],
         ['load_tide1',
          odict([['dtype', 'f8'],
@@ -1744,13 +1800,13 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
                 ['source', 'FES2014'],
                 ['institution', 'LEGOS/CNES'],
                 ['units', 'm'],
-                ['valid_min', -999999],
-                ['valid_max', 999999],
+                ['valid_min', -0.2],
+                ['valid_max', 0.2],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
                 ['comment', textjoin("""
                     Geocentric load tide height. The effect of the ocean tide
-                    loading of the Earth’s crust. This value is used to compute
+                    loading of the Earth's crust. This value is used to compute
                     wse. The value is computed from the FES2014 ocean tide
                     model.""")],
                 ])],
@@ -1760,13 +1816,13 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
                 ['source', 'GOT4.10c'],
                 ['institution', 'GSFC'],
                 ['units', 'm'],
-                ['valid_min', -999999],
-                ['valid_max', 999999],
+                ['valid_min', -0.2],
+                ['valid_max', 0.2],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
                 ['comment', textjoin("""
                     Geocentric load tide height. The effect of the ocean tide
-                    loading of the Earth’s crust. The value is computed from
+                    loading of the Earth's crust. The value is computed from
                     the GOT4.10c ocean tide model.""")],
                 ])],
         ['dry_trop_c',
@@ -1774,8 +1830,8 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
                 ['long_name', 'dry tropospheric vertical correction to WSE'],
                 ['source', 'European Centre for Medium-Range Weather Forecasts'],
                 ['units', 'm'],
-                ['valid_min', -2.5],
-                ['valid_max', -2.0],
+                ['valid_min', -3.0],
+                ['valid_max', -1.5],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
                 ['comment', textjoin("""
@@ -1790,7 +1846,7 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
                 ['long_name', 'model wet tropospheric correction to WSE'],
                 ['source', 'European Centre for Medium-Range Weather Forecasts'],
                 ['units', 'm'],
-                ['valid_min', -0.5],
+                ['valid_min', -1],
                 ['valid_max', 0],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
@@ -1803,9 +1859,10 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
         ['iono_c',
          odict([['dtype', 'f8'],
                 ['long_name', 'ionospheric vertical correction to WSE'],
-                ['source', 'JPL Global Ionosphere Map'],
+                ['source', 'Global Ionosphere Maps'],
+                ['institution', 'JPL'],
                 ['units', 'm'],
-                ['valid_min', -0.1],
+                ['valid_min', -0.5],
                 ['valid_max', 0],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
@@ -1813,14 +1870,14 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
                     Equivalent vertical correction due to ionosphere delay.
                     Adding the reported correction to the reported reach WSE
                     results in the uncorrected reach WSE. The value is computed
-                    from JPL’s Global Ionosphere Map (GIM).""")],
+                    the JPL Global Ionosphere Maps (GIM).""")],
                 ])],
         ['xovr_cal_c',
          odict([['dtype', 'f8'],
                 ['long_name', 'crossover calibration WSE correction'],
                 ['units', 'm'],
-                ['valid_min', -1000],
-                ['valid_max', 1000],
+                ['valid_min', -10],
+                ['valid_max', 10],
                 ['_FillValue', MISSING_VALUE_FLT],
                 ['tag_basic_expert', 'Expert'],
                 ['comment', textjoin("""
@@ -2121,8 +2178,8 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
             klass['geoid_hght'] = reach_outputs['geoid_hght']
             klass['geoid_slop'] = reach_outputs['geoid_slop']
             klass['p_n_nodes'] = reach_outputs['prior_n_nodes']
-            klass['p_latitud'] = reach_outputs['prior_lat']
-            klass['p_longitud'] = reach_outputs['prior_lon']
+            klass['p_lat'] = reach_outputs['prior_lat']
+            klass['p_lon'] = reach_outputs['prior_lon']
             klass['p_width'] = reach_outputs['width_prior']
             klass['p_length'] = reach_outputs['length_prior']
             klass['rch_id_up'] = reach_outputs['rch_id_up']
@@ -2155,6 +2212,55 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
 
         return klass
 
+    @classmethod
+    def from_shapes(cls, shape_path):
+        """Constructs self from shapefiles"""
+        klass = cls()
+        with fiona.open(shape_path) as ifp:
+            records = list(ifp)
+
+        cl_fill = klass.VARIABLES['centerline_lon']['_FillValue']
+        cl_len = klass.DIMENSIONS['centerlines']
+
+        data = {}
+        data['centerline_lon'] = np.ones([len(records), cl_len]) * cl_fill
+        data['centerline_lat'] = np.ones([len(records), cl_len]) * cl_fill
+
+        for irec, record in enumerate(records):
+            this_cl = np.array(records[0]['geometry']['coordinates'])
+            data['centerline_lon'][irec, :this_cl.shape[0]] = this_cl[:, 0]
+            data['centerline_lat'][irec, :this_cl.shape[0]] = this_cl[:, 1]
+
+        for key, reference in klass.VARIABLES.items():
+            if key in ['centerline_lon', 'centerline_lat']:
+                pass
+
+            elif key in ['rch_id_up', 'rch_id_dn']:
+                fill = klass.VARIABLES[key]['_FillValue']
+                n_ids = klass.DIMENSIONS['reach_neighbors']
+                data[key] = np.ones([len(records), n_ids])*fill
+                for irec, record in enumerate(records):
+                    tmp = record['properties'][key].replace(
+                        'no_data', str(fill))
+                    data[key][irec, :] = np.array([
+                        int(item) for item in tmp.split(' ')])
+
+            else:
+                data[key] = np.array([
+                    record['properties'][key] for record in records])
+
+        for key, value in data.items():
+            setattr(klass, key, value)
+        return klass
+
+    def uncorrect_tides(self):
+        """Removes geoid, solid earth tide, pole tide, and load tide"""
+        mask = np.logical_and(
+            self.geoid_hght > -200, self.geoid_hght < 200)
+        self.wse[mask] += (
+            self.geoid_hght[mask] + self.solid_tide[mask] +
+            self.load_tide1[mask] + self.pole_tide[mask])
+
     def update_from_pixc(self, pixc_file, index_file):
         """Copies some attributes from input PIXC file"""
         with netCDF4.Dataset(pixc_file, 'r') as ifp:
@@ -2178,3 +2284,11 @@ class RiverTileReaches(Product, ShapeWriterMixIn):
                 reach_value[ii] = np.mean(
                     node_value[nodes.reach_id == reach_id])
             self[key] = reach_value
+
+    def __add__(self, other):
+        """Adds other to self"""
+        klass = RiverTileReaches()
+        for key in klass.VARIABLES:
+            setattr(klass, key, np.concatenate((
+                getattr(self, key), getattr(other, key))))
+        return klass

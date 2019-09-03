@@ -138,7 +138,7 @@ class L2PixcToRiverTile(object):
             smooth=self.config['smooth'],
             alpha=self.config['alpha'],
             max_iter=self.config['max_iter'],
-            enhanced=True)
+            enhanced=False)
 
         self.node_outputs, self.reach_outputs = None, None
         if len(self.reach_collection) > 0:
@@ -172,6 +172,11 @@ class L2PixcToRiverTile(object):
                 i_start = i_start + num_nodes
         else:
             warnings.warn('Reach collection has zero entries')
+
+        # add attributes from pixc to pixcvecriver file
+        pixcvec = L2PIXCVector.from_ncfile(self.index_file)
+        pixcvec.update_from_pixc(self.pixc_file)
+        pixcvec.to_ncfile(self.index_file)
 
     def do_improved_geolocation(self):
         """
@@ -233,12 +238,8 @@ class L2PixcToRiverTile(object):
                 ofp.variables['azimuth_index'][:] * int(nr_pixels) +
                 ofp.variables['range_index'][:])
 
-            pixc_index = np.array(np.where(
+            ofp.variables['pixc_index'][:] = np.array(np.where(
                 np.in1d(pixc_idx, pixcvec_idx))).astype('int32')[0]
-
-            var = ofp.createVariable(
-                'pixc_index', pixc_index.dtype.str, ('record', ))
-            var[:] = pixc_index[:]
 
     def flag_lakes_pixc(self):
         """
@@ -246,17 +247,14 @@ class L2PixcToRiverTile(object):
         """
         LOGGER.info('flag_lakes_pixc')
         with netCDF4.Dataset(self.index_file, 'a') as ofp:
-            pixc_reach = ofp.variables['reach_index'][:]
+            pixc_reach = ofp.variables['reach_id'][:]
 
             # make lake_flag dataset and fill with 255
-            var_lake_flag = ofp.createVariable(
-                'lake_flag', np.dtype('uint8'), ('record', ))
-            var_lake_flag[:] = 255*np.ones(pixc_reach.shape)
-
+            ofp.variables['lake_flag'][:] = 255*np.ones(pixc_reach.shape)
             if self.reach_outputs is not None:
                 for reach, lake_flag in zip(self.reach_outputs['reach_idx'],
                                             self.reach_outputs['lake_flag']):
-                    var_lake_flag[pixc_reach == reach] = lake_flag
+                    ofp.variables['lake_flag'][pixc_reach == reach] = lake_flag
 
     def build_products(self):
         """Constructs the L2HRRiverTile data product / updates the index file"""
@@ -270,34 +268,43 @@ class L2PixcToRiverTile(object):
             self.rivertile_product = L2HRRiverTile()
 
         # If lake flag is set don't output width, area, or slope.
-        for ireach, reach_id in enumerate(self.reach_outputs['reach_idx']):
-            if self.reach_outputs['lake_flag'][ireach] != 0:
-                self.reach_outputs['slope'][ireach] = MISSING_VALUE_FLT
-                self.reach_outputs['slope2'][ireach] = MISSING_VALUE_FLT
-                self.reach_outputs['slope_u'][ireach] = MISSING_VALUE_FLT
-                # TODO mask out slope2_u and slope?_r_u datasets when available
-                self.reach_outputs['width'][ireach] = MISSING_VALUE_FLT
-                self.reach_outputs['width_u'][ireach] = MISSING_VALUE_FLT
-                self.reach_outputs['area'][ireach] = MISSING_VALUE_FLT
-                self.reach_outputs['area_u'][ireach] = MISSING_VALUE_FLT
-                self.reach_outputs['area_det'][ireach] = MISSING_VALUE_FLT
-                self.reach_outputs['area_det_u'][ireach] = MISSING_VALUE_FLT
-                self.reach_outputs['area_of_ht'][ireach] = MISSING_VALUE_FLT
+        try:
+            for ireach, reach_id in enumerate(self.reach_outputs['reach_idx']):
+                if self.reach_outputs['lake_flag'][ireach] != 0:
+                    self.reach_outputs['slope'][ireach] = MISSING_VALUE_FLT
+                    self.reach_outputs['slope2'][ireach] = MISSING_VALUE_FLT
+                    self.reach_outputs['slope_u'][ireach] = MISSING_VALUE_FLT
+                    # TODO mask out slope2_u and slope?_r_u datasets when available
+                    self.reach_outputs['width'][ireach] = MISSING_VALUE_FLT
+                    self.reach_outputs['width_u'][ireach] = MISSING_VALUE_FLT
+                    self.reach_outputs['area'][ireach] = MISSING_VALUE_FLT
+                    self.reach_outputs['area_u'][ireach] = MISSING_VALUE_FLT
+                    self.reach_outputs['area_det'][ireach] = MISSING_VALUE_FLT
+                    self.reach_outputs['area_det_u'][ireach] = MISSING_VALUE_FLT
+                    self.reach_outputs['area_of_ht'][ireach] = MISSING_VALUE_FLT
 
-                mask = self.node_outputs['reach_indx'] == reach_id
-                self.node_outputs['w_area'][mask] = MISSING_VALUE_FLT
-                self.node_outputs['width_u'][mask] = MISSING_VALUE_FLT
-                self.node_outputs['area'][mask] = MISSING_VALUE_FLT
-                self.node_outputs['area_det'][mask] = MISSING_VALUE_FLT
-                self.node_outputs['area_of_ht'][mask] = MISSING_VALUE_FLT
-                self.node_outputs['area_u'][mask] = MISSING_VALUE_FLT
-                self.node_outputs['area_det_u'][mask] = MISSING_VALUE_FLT
+                    mask = self.node_outputs['reach_indx'] == reach_id
+                    self.node_outputs['w_area'][mask] = MISSING_VALUE_FLT
+                    self.node_outputs['width_u'][mask] = MISSING_VALUE_FLT
+                    self.node_outputs['area'][mask] = MISSING_VALUE_FLT
+                    self.node_outputs['area_det'][mask] = MISSING_VALUE_FLT
+                    self.node_outputs['area_of_ht'][mask] = MISSING_VALUE_FLT
+                    self.node_outputs['area_u'][mask] = MISSING_VALUE_FLT
+                    self.node_outputs['area_det_u'][mask] = MISSING_VALUE_FLT
+
+        # Catch case when self.reach_outputs is None
+        except TypeError:
+            pass
 
         # add in a bunch more stuff from PIXC
         if not os.path.isfile(self.index_file):
             L2PIXCVector().to_ncfile(self.index_file)
         self.rivertile_product.update_from_pixc(
             self.pixc_file, self.index_file)
+
+        pixcvec = L2PIXCVector.from_ncfile(self.index_file)
+        pixcvec.update_from_rivertile(self.rivertile_product)
+        pixcvec.to_ncfile(self.index_file)
 
         history_string = "Created {}".format(
             datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f'))
@@ -312,19 +319,3 @@ class L2PixcToRiverTile(object):
         self.rivertile_product.reaches.history = history_string
         self.rivertile_product.reaches.xref_input_l2_hr_pixc_file = \
             self.pixc_file
-
-        # copy attributes from pixel cloud to pixel cloud vector
-        with netCDF4.Dataset(self.index_file, 'a') as ofp,\
-             netCDF4.Dataset(self.pixc_file, 'r') as ifp:
-
-            # put lon in [0, 360)
-            lon = ofp.variables['longitude_vectorproc'][:]
-            lon[lon < 0] += 360
-            ofp.variables['longitude_vectorproc'][:] = lon
-
-            for attr in L2PIXCVector.ATTRIBUTES.keys():
-                try:
-                    value = getattr(ifp, attr)
-                except AttributeError:
-                    value = getattr(ifp.groups['pixel_cloud'], attr, 'None')
-                setattr(ofp, attr, value)

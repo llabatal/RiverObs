@@ -27,14 +27,14 @@ def main():
     figure, axis = plt.subplots(figsize=FIGSIZE, dpi=DPI)
     for ii, node_id in enumerate(rivertile.nodes.node_id):
 
-        mask = pixc_vector.node_index == node_id
+        mask = pixc_vector.node_id == node_id
         this_color = scatter_colors[ii%len(scatter_colors)]
         axis.scatter(
             pixc_vector.longitude_vectorproc[mask],
             pixc_vector.latitude_vectorproc[mask],
             s=50, c=this_color, edgecolor='none')
 
-    is_bad_width = rivertile.nodes.node_q & 0x1 > 0
+    is_bad_width = rivertile.nodes.quality_f & 0x1 > 0
 
     axis.scatter(
         rivertile.nodes.lon_prior[is_bad_width],

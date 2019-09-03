@@ -10,13 +10,13 @@ import warnings
 
 import numpy as np
 
-import SWOTRiver.products.product
+import SWOTWater.products.product
 import SWOTRiver.analysis.tabley
 
 
 def load_rivertiles(truth_file, data_file):
-    truth = SWOTRiver.products.product.MutableProduct.from_ncfile(truth_file)
-    data = SWOTRiver.products.product.MutableProduct.from_ncfile(data_file)
+    truth = SWOTWater.products.product.MutableProduct.from_ncfile(truth_file)
+    data = SWOTWater.products.product.MutableProduct.from_ncfile(data_file)
     return truth, data
 
 
@@ -68,8 +68,8 @@ def get_metrics(truth, data):
             (data.area_total - truth.area_total) / truth.area_total) * 100.0,
         'area_detct':(
             (data.area_detct - truth.area_detct) / truth.area_detct) * 100.0,
-        'height': (data.wse - truth.wse) * 1e2,
-        'slope': (data.slope - truth.slope) / 10,
+        'height': (data.wse - truth.wse) * 1e2,#convert m to cm
+        'slope': (data.slope - truth.slope) * 1e5,#convert from m/m to cm/km
         'width': data.width - truth.width,
     }
     return metrics

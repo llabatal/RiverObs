@@ -15,8 +15,8 @@ import textwrap
 import numpy as np
 import netCDF4 as nc
 
-import SWOTRiver.products.netcdf as netcdf
-from SWOTRiver.products.constants import FILL_VALUES
+import SWOTWater.products.netcdf as netcdf
+from SWOTWater.products.constants import FILL_VALUES
 
 FIELD_WARNING = "I'm afraid I can't do that. {} is not in {}"
 
@@ -42,9 +42,10 @@ def sort_variable_attribute_odict(in_odict):
                    'calendar', 'time', 'standard_time', 'tai_utc_difference',
                    'leap_second']
     # Then put in non-standard ones, and finally these ones in this order
-    LAST_ATTRS = ['units', 'scale_factor', 'coordinates', 'quality_flag',
-                  'flag_meanings', 'flag_values', 'valid_min', 'valid_max',
-                  'comment']
+    LAST_ATTRS = [
+        'units', 'add_offset', 'scale_factor', 'coordinates',
+        'quality_flag', 'flag_meanings', 'flag_values', 'valid_min',
+        'valid_max', 'comment']
 
     attr_list = []
     for key in FIRST_ATTRS:
@@ -377,30 +378,31 @@ class Product(object):
     def print_xml(cls, prefix=None, ofp=sys.stdout, shape_names=[],
                   shape_dims={}):
         """Prints the XML for this data product"""
+        klass = cls()
 
         INDENT = 2*' '
         if prefix is None:
             try:
-                uid = cls.UID
+                uid = klass.UID
             except AttributeError:
-                uid = cls.__class__.__name__
+                uid = klass.__class__.__name__
 
             ofp.write(INDENT+'<product>\n')
             ofp.write(2*INDENT+'<science uid="%s">\n'% uid)
             ofp.write(3*INDENT+'<nodes>\n')
 
-        for group in cls.GROUPS:
+        for group in klass.GROUPS:
             if prefix is None:
                 next_prefix = group
             else:
                 next_prefix = '%s/%s' % (prefix, group)
 
-            cls.get_product(cls.GROUPS[group]).print_xml(
+            klass.get_product(klass.GROUPS[group]).print_xml(
                     prefix=next_prefix, ofp=ofp, shape_names=shape_names,
                     shape_dims=shape_dims)
 
-        for dset in cls.VARIABLES:
-            attrs = copy.deepcopy(cls.VARIABLES[dset])
+        for dset in klass.VARIABLES:
+            attrs = copy.deepcopy(klass.VARIABLES[dset])
             # get dtype str representation from instance of number
             try:
                 type_str = np.dtype(attrs.pop('dtype')).str
@@ -409,7 +411,7 @@ class Product(object):
 
             if type_str[1] == 'c':
                 type_str = type_str[0] + 'f{}'.format(int(int(type_str[2:])/2))
-                attrs['dimensions']['depth'] = 2
+                attrs['dimensions']['complex_depth'] = 2
 
             # XML wdith value
             width = int(type_str[2]) * 8
@@ -420,17 +422,11 @@ class Product(object):
                 shape_names.append(shape_name)
                 shape_dims[shape_name] = attrs['dimensions']
 
-            # scale_factor always float (don't cast to an int)
-            try:
-                annotations = 'scale_factor="%f" ' % attrs.pop('scale_factor')
-            except KeyError:
-                annotations = ''
-
             # Don't write out dimensions
             attrs.pop('dimensions', None)
 
             # _FillValue special handling
-            attrs["_FillValue"] = cls._getfill(dset)
+            attrs["_FillValue"] = klass._getfill(dset)
             attrs.move_to_end("_FillValue", last=False)# put fill value in front
 
             # XML node name
@@ -440,10 +436,17 @@ class Product(object):
                 if np.iscomplexobj(value):
                     attrs[name] = value.real
 
+            things = []
+            for key, value in attrs.items():
+                # explicitly use floats for add_offset and scale_factor
+                if key in ['add_offset', 'scale_factor']:
+                    things.append('%s="%f" ' % (key, value))
+                else:
+                    things.append('{}="{}"'.format(key, value))
+            annotations = ' '.join(things)
+
             # for floats
             if type_str[1] == 'f':
-                annotations += ' '.join([
-                    '{}="{}"'.format(a, b) for a, b in attrs.items()])
                 string = '\n'.join([
                     4*INDENT+'<real name="%s" shape="%s" width="%d">' % (
                         dset_name, shape_name, width),
@@ -452,8 +455,6 @@ class Product(object):
 
             # for integers
             elif type_str[1] == 'i' or type_str[1] == 'u':
-                annotations += ' '.join([
-                    '{}="{}"'.format(a, b) for a, b in attrs.items()])
                 signed_str = 'true' if type_str[1] == 'i' else 'false'
                 string = '\n'.join([
                     4*INDENT+'<integer name="%s" shape="%s" width="%d" signed="%s">' % (
@@ -461,47 +462,69 @@ class Product(object):
                     5*INDENT+'<annotation app="conformance" %s/>' % annotations,
                     4*INDENT+'</integer>\n'])
 
+            elif type_str[1:3] == 'S1':
+                width = int(type_str[2])
+                string = '\n'.join([
+                    4*INDENT+'<char name="%s" shape="%s" width="%d">' % (
+                        dset_name, shape_name, width),
+                    5*INDENT+'<annotation app="conformance" %s/>' % annotations,
+                    4*INDENT+'</char>\n'])
+
+            elif type_str[1] == 'S':
+                width = int(type_str[2])
+                string = '\n'.join([
+                    4*INDENT+'<string name="%s" shape="%s" width="%d">' % (
+                        dset_name, shape_name, width),
+                    5*INDENT+'<annotation app="conformance" %s/>' % annotations,
+                    4*INDENT+'</string>\n'])
+
             else:
-                raise TypeError("Only ints / floats supported so far!")
+                raise TypeError("Only ints, floats, strings supported so far!")
 
             ofp.write(string)
 
         # add attributes
-        for atr in cls.ATTRIBUTES:
-            attrs = copy.deepcopy(cls.ATTRIBUTES[atr])
-            if prefix is None:
-                this_prefix = ''
-            else:
-                this_prefix = '/'+prefix
+        for attr, attr_value in klass.ATTRIBUTES.items():
+            attr_node = (
+                '/@'+attr if prefix is None else '/%s/@%s' % (prefix, attr))
+
             # get the dtype and doc string
-            try:
-                type_str = np.dtype(attrs.pop('dtype')).str
-                # XML wdith value
-                width = int(type_str[2]) * 8
-                if type_str[1]=='U':
-                    str_type = 'string'
-                    str_width = 'length'
-                else:
-                    str_type = 'real'
-                    str_width = 'width'
-            except KeyError:
-                str_type = 'string'
-                str_width = 'length'
-                width = 0
-            try:
-                desc = attrs.pop('docstr')
-                # decode
-                string = (4*INDENT+\
-                    '<%s %s="%d" name="%s/@%s" shape="Scalar">\n' %(
-                    str_type, str_width, width, this_prefix, atr))
-                string = (string + 5*INDENT +\
-                    '<annotation description="%s"/>\n' %desc)
-                string = string + 4*INDENT + '</%s>\n'%(str_type)
-            except KeyError:
-                string = (4*INDENT+\
-                    '<%s %s="%d" name="%s/@%s" shape="Scalar"/>\n' %(
-                    str_type, str_width, width, this_prefix, atr))
-            ofp.write(string)
+            type_str = np.dtype(attr_value['dtype']).str
+            width = int(type_str[2]) * 8
+
+            annotation_desc_string = (
+                '<annotation description="%s"/>' % attr_value['docstr']
+                if 'docstr' in attr_value else None)
+
+            strings = []
+            if type_str[1] == 'f':
+                strings += [
+                    4*INDENT+'<real name="%s" shape="Scalar" width="%d">' %(
+                    attr_node, width),]
+                if annotation_desc_string is not None:
+                    strings += [5*INDENT+annotation_desc_string,]
+                strings += [4*INDENT+'</real>',]
+
+            elif type_str[1] == 'i' or type_str[1] == 'u':
+                signed_str = 'true' if type_str[1] == 'i' else 'false'
+                strings += [
+                    4*INDENT+'<integer name="%s" shape="Scalar" width="%d" signed="%s">' %(
+                    attr_node, width, signed_str),]
+                if annotation_desc_string is not None:
+                    strings += [5*INDENT+annotation_desc_string,]
+                strings += [4*INDENT+'</integer>',]
+
+            elif type_str == 'str' or type_str[1] == 'U':
+                strings += [
+                    4*INDENT+'<string name="%s" shape="Scalar" width="%d">' %(
+                    attr_node, width/8),]
+                if annotation_desc_string is not None:
+                    strings += [5*INDENT+annotation_desc_string,]
+                strings += [4*INDENT+'</string>',]
+            else:
+                raise TypeError("Only ints, floats, strings supported so far!")
+
+            ofp.write('\n'.join(strings)+'\n')
 
         if prefix is None:
             ofp.write(3*INDENT+'</nodes>\n')
@@ -529,13 +552,14 @@ class Product(object):
         """
         dtype = self.VARIABLES[my_var]['dtype']
         scale_factor = self.VARIABLES[my_var].get('scale_factor', 1)
+        add_offset = self.VARIABLES[my_var].get('add_offset', 0)
         quantized_fill = self._getfill(my_var)
         fill = FILL_VALUES[value.dtype.str[1:]]
 
         valid = np.logical_and(value != fill, ~np.isnan(value))
         quantized_values = quantized_fill * np.ones(value.shape)
         quantized_values[valid] = (
-            value[valid] / scale_factor).astype(dtype)
+            (value[valid]-add_offset) / scale_factor).astype(dtype)
         out_value = np.ma.masked_array(
             data=quantized_values, dtype=dtype, fill_value=quantized_fill,
             mask=np.logical_not(valid))
@@ -546,6 +570,33 @@ class Product(object):
             self[group].cast()
         for key in self.variables:
             self[key] = self._casted_variable(key)
+    
+    def reset_valid_minmax(self):
+        """open up valid data range to whole range of datatype"""
+        print ('resetting valid min/max range')
+        # handle variables not in a group 
+        for key, variable in self.VARIABLES.items():
+            if variable is not None:
+                print ('variable: ', key)
+                try:
+                    info = np.iinfo(variable['dtype'])
+                except ValueError:
+                    info = np.finfo(variable['dtype'])
+                variable['valid_min'] = info.min
+                variable['valid_max'] = info.max
+        # handle variables in groups 
+        for groupkey, group in self._groups.items():
+            print('group: ', groupkey)
+            for key, variable in group.VARIABLES.items():
+                if variable is not None:
+                    print ('\tvariable: ', key)
+                    try:
+                        info = np.iinfo(variable['dtype'])
+                    except ValueError:
+                        info = np.finfo(variable['dtype'])
+                    variable['valid_min'] = info.min
+                    variable['valid_max'] = info.max
+                    
 
 class MutableProduct(Product):
     """A product with forms as instance attributes, not class attributes

@@ -14,6 +14,7 @@ import numpy as np
 import scipy.ndimage.morphology
 
 import RiverObs.ReachDatabase
+from SWOTWater.constants import GDEM_PIXC_CLASSES
 
 LOGGER = logging.getLogger(__name__)
 
@@ -227,7 +228,11 @@ def main():
     gdem_x, gdem_y = llbox.proj(lon, lat)
 
     # Extract Reaches
-    reaches = RiverObs.ReachDatabase.ReachExtractor(args.reachdb_path, llbox)
+    try:
+        reaches = RiverObs.ReachDatabase.ReachExtractor(args.reachdb_path, llbox)
+    except Exception as exception:
+        LOGGER.error('Unable to extract reaches: {}'.format(exception))
+        reaches = []
 
     # Optionally erode before segmentation
     if args.erosion_iter > 0:
@@ -248,7 +253,7 @@ def main():
         type_label != land_label)
 
     out_type = type.copy()
-    out_type[water_not_main_label] = 0
+    out_type[water_not_main_label] = GDEM_PIXC_CLASSES['open_water_lake']
 
     if args.plot:
         import matplotlib.pyplot as plt

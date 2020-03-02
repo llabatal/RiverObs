@@ -31,6 +31,7 @@ class L2PixcToRiverTile(object):
         self.pixc_file = l2pixc_file
         self.index_file = index_file
         self.is_new_pixc = is_new_pixc
+        self.node_outputs, self.reach_outputs = None, None
 
         # if is_new_pixc is not supplied, test pixc file to see if it is true
         if self.is_new_pixc is None:
@@ -140,7 +141,6 @@ class L2PixcToRiverTile(object):
             max_iter=self.config['max_iter'],
             enhanced=False)
 
-        self.node_outputs, self.reach_outputs = None, None
         if len(self.reach_collection) > 0:
             reach_variables = list(self.reach_collection[0].metadata.keys())
             node_variables = list(self.reach_collection[0].__dict__.keys())
@@ -177,6 +177,9 @@ class L2PixcToRiverTile(object):
         pixcvec = L2PIXCVector.from_ncfile(self.index_file)
         pixcvec.update_from_pixc(self.pixc_file)
         pixcvec.to_ncfile(self.index_file)
+
+        # save for use later to fill in missing nodes/reaches
+        self.prd_reaches = river_estimator.reaches
 
     def do_improved_geolocation(self):
         """
@@ -238,8 +241,15 @@ class L2PixcToRiverTile(object):
                 ofp.variables['azimuth_index'][:] * int(nr_pixels) +
                 ofp.variables['range_index'][:])
 
-            ofp.variables['pixc_index'][:] = np.array(np.where(
-                np.in1d(pixc_idx, pixcvec_idx))).astype('int32')[0]
+            indx, indx_pv, indx_pixc = np.intersect1d(
+                pixcvec_idx, pixc_idx, return_indices=True)
+
+            # re-order PIXCVecRiver datasets to ordering of pixc_index.
+            for dset in ofp.variables.keys():
+                data = ofp.variables[dset][:]
+                ofp.variables[dset][:] = data[indx_pv]
+
+            ofp.variables['pixc_index'][:] = indx_pixc.astype('int32')
 
     def flag_lakes_pixc(self):
         """
@@ -259,14 +269,6 @@ class L2PixcToRiverTile(object):
     def build_products(self):
         """Constructs the L2HRRiverTile data product / updates the index file"""
         LOGGER.info('build_products')
-
-        try:
-            self.rivertile_product = L2HRRiverTile.from_riverobs(
-                self.node_outputs, self.reach_outputs, self.reach_collection)
-        except AttributeError:
-            LOGGER.warn('Output products are empty')
-            self.rivertile_product = L2HRRiverTile()
-
         # If lake flag is set don't output width, area, or slope.
         try:
             for ireach, reach_id in enumerate(self.reach_outputs['reach_idx']):
@@ -292,9 +294,13 @@ class L2PixcToRiverTile(object):
                     self.node_outputs['area_u'][mask] = MISSING_VALUE_FLT
                     self.node_outputs['area_det_u'][mask] = MISSING_VALUE_FLT
 
-        # Catch case when self.reach_outputs is None
+            self.rivertile_product = L2HRRiverTile.from_riverobs(
+                self.node_outputs, self.reach_outputs, self.reach_collection,
+                self.prd_reaches)
+
         except TypeError:
-            pass
+            LOGGER.warn('Output products are empty')
+            self.rivertile_product = L2HRRiverTile()
 
         # add in a bunch more stuff from PIXC
         if not os.path.isfile(self.index_file):

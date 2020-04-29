@@ -13,12 +13,12 @@ from SWOTRiver.products.rivertile import \
     L2HRRiverTile, RiverTileNodes, RiverTileReaches, RIVERTILE_ATTRIBUTES
 
 RIVERSP_ATTRIBUTES = copy.deepcopy(RIVERTILE_ATTRIBUTES)
-RIVERSP_ATTRIBUTES['short_name']['docstr'] = 'L2_HR_RiverSP'
-RIVERSP_ATTRIBUTES['title']['docstr'] = \
-        'Level 2 KaRIn High Rate River Single Pass Vector Product'
-for key in ['Conventions', 'title', 'mission_name', 'short_name']:
-    RIVERSP_ATTRIBUTES[key]['value'] = RIVERSP_ATTRIBUTES[key]['docstr']
+RIVERSP_ATTRIBUTES['title'] = {'dtype': 'str', 
+        'value': 'Level 2 KaRIn High Rate River Single Pass Vector Product',
+        'docstr': 'Level 2 KaRIn High Rate River Single Pass Vector Product'}
 
+for key in ['Conventions', 'title', 'platform']:
+    RIVERSP_ATTRIBUTES[key]['value'] = RIVERSP_ATTRIBUTES[key]['docstr']
 
 class L2HRRiverSP(L2HRRiverTile):
     """
@@ -44,17 +44,6 @@ class L2HRRiverSP(L2HRRiverTile):
         # sort them by increasing reach id
         klass.sort()
         return klass
-
-    def sort(self):
-        """sorts self according to the PDD"""
-        # sort first by reach_id, then by node_id
-        node_sort_idx = np.argsort(self.nodes.node_id)
-        for key, values in self.nodes.variables.items():
-            self.nodes[key] = values[node_sort_idx]
-
-        reach_sort_idx = np.argsort(self.reaches.reach_id)
-        for key, values in self.reaches.variables.items():
-            self.reaches[key] = values[reach_sort_idx]
 
     def __add__(self, other):
         """Adds other to self"""

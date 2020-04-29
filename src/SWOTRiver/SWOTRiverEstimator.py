@@ -10,6 +10,7 @@ import numpy as np
 import netCDF4 as nc
 import collections
 import scipy.stats
+import scipy.ndimage
 import statsmodels.api
 import logging
 
@@ -381,7 +382,56 @@ class SWOTRiverEstimator(SWOTL2):
         self.river_obs_collection = collections.OrderedDict()
         self.river_reach_collection = collections.OrderedDict()
         self.fit_collection = collections.OrderedDict()
+
+        self.flatten_interferogram()
         self.nc.close()
+
+    def flatten_interferogram(self):
+        """Flattens the pixel cloud interferogram"""
+        # range index is self.img_x, azi is self.img_y
+        try:
+            import cnes.modules.geoloc.lib.geoloc as geoloc
+            from cnes.common.lib.my_variables import \
+                GEN_RAD_EARTH_EQ, GEN_RAD_EARTH_POLE
+
+        except ImportError:
+            print("Can't flatten interferogram as swotCNES not found.")
+            return
+
+        try:
+            tvp_plus_y_antenna_xyz = (
+                self.nc['tvp']['plus_y_antenna_x'][:][self.img_y],
+                self.nc['tvp']['plus_y_antenna_y'][:][self.img_y],
+                self.nc['tvp']['plus_y_antenna_z'][:][self.img_y])
+            tvp_minus_y_antenna_xyz = (
+                self.nc['tvp']['minus_y_antenna_x'][:][self.img_y],
+                self.nc['tvp']['minus_y_antenna_y'][:][self.img_y],
+                self.nc['tvp']['minus_y_antenna_z'][:][self.img_y])
+            pixc = {'tvp': {'time': self.nc['tvp']['time'][:]},
+                    'pixel_cloud': {'illumination_time': 
+                     self.nc['pixel_cloud']['illumination_time'][:]}}
+        except KeyError:
+            print("Can't flatten interferogram as TVP not in pixel cloud.")
+            return
+
+        hgt_2d = np.nan*np.ones((np.max(self.img_y)+1, np.max(self.img_x)+1))
+        hgt_2d[self.img_y, self.img_x] = self.h_noise
+
+        # do a 2d median filter on the heights
+        hgt_filt = scipy.ndimage.generic_filter(hgt_2d, np.nanmedian, size=11)
+
+        target_xyz = geoloc.convert_llh2ecef(
+            self.lat, self.lon, hgt_filt[self.img_y, self.img_x],
+            GEN_RAD_EARTH_EQ, GEN_RAD_EARTH_POLE)
+
+
+        pixc_tvp_index = SWOTWater.aggregate.get_sensor_index(pixc)
+        pixc_wavelength = self.nc.wavelength
+        flat_ifgram = SWOTWater.aggregate.flatten_interferogram(
+            self.ifgram, tvp_plus_y_antenna_xyz, tvp_minus_y_antenna_xyz,
+            target_xyz, pixc_tvp_index[self.img_y], pixc_wavelength)
+
+        self.ifgram = flat_ifgram
 
     def segment_water_class(self, preseg_dilation_iter=0):
         """
@@ -661,11 +711,14 @@ class SWOTRiverEstimator(SWOTL2):
                 print("CenterLineException: ", e)
                 continue
 
-            # Add width per node to centerline and re-init IteratedRiverObs
-            # to use the per node max widths (max width == 2x prior DB width)
+            # Add width per node to centerline and re-init IteratedRiverObs.
+            # Search width is the width it uses to always include (1/2 on
+            # each side of centerline).
+            search_width = 2 * (
+                self.reaches[i_reach].width * self.reaches[i_reach].wth_coef)
             river_obs.add_centerline_obs(
                 self.reaches[i_reach].x, self.reaches[i_reach].y,
-                self.reaches[i_reach].width*2, 'max_width')
+                search_width, 'max_width')
             river_obs.reinitialize()
 
             if len(river_obs.x) == 0:
@@ -1046,6 +1099,19 @@ class SWOTRiverEstimator(SWOTL2):
 
         dark_frac = 1-area_det/area
 
+        # Compute flow direction relative to along-track
+        tangent = self.river_obs.centerline.tangent[
+            self.river_obs.populated_nodes]
+
+        fit_xx = np.array([np.ones(x_median.shape), x_median, y_median]).T
+        fit = statsmodels.api.OLS(xtrack_median, fit_xx).fit()
+        dxt_dx = fit.params[1]
+        dxt_dy = fit.params[2]
+        xt_angle = np.arctan2(dxt_dy, dxt_dx)
+        at_angle = xt_angle-np.pi/2
+        tangent_angle = np.arctan2(tangent[:, 1], tangent[:, 0])
+        flow_dir = np.rad2deg(tangent_angle - at_angle) % 360
+
         # type cast node outputs and pack it up for RiverReach constructor
         river_reach_kw_args = {
             'lat': lat_median.astype('float64'),
@@ -1095,6 +1161,7 @@ class SWOTRiverEstimator(SWOTL2):
             'grand_id': reach.grod_id[self.river_obs.populated_nodes],
             'n_chan_max': reach.n_chan_max[self.river_obs.populated_nodes],
             'n_chan_mod': reach.n_chan_mod[self.river_obs.populated_nodes],
+            'flow_dir': flow_dir.astype('float64'),
         }
 
         if xtrack_median is not None:

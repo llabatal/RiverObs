@@ -98,6 +98,9 @@ class L2PixcToRiverTile(object):
         if 'preseg_dilation_iter' not in self.config:
             self.config['preseg_dilation_iter'] = 0
 
+        if 'slope_method' not in self.config:
+            self.config['slope_method'] = 'weighted'
+
         # key/value arguments for constructing SWOTRiverEstimator
         kwargs = {
             'bounding_box': self.compute_bounding_box(),
@@ -117,7 +120,8 @@ class L2PixcToRiverTile(object):
             'subsample_factor': 1,
             'height_agg_method': self.config['height_agg_method'],
             'area_agg_method': self.config['area_agg_method'],
-            'preseg_dilation_iter': self.config['preseg_dilation_iter'],}
+            'preseg_dilation_iter': self.config['preseg_dilation_iter'],
+            'slope_method': self.config['slope_method']}
 
         river_estimator = SWOTRiver.SWOTRiverEstimator(
             self.pixc_file, **kwargs)
@@ -139,7 +143,7 @@ class L2PixcToRiverTile(object):
             smooth=self.config['smooth'],
             alpha=self.config['alpha'],
             max_iter=self.config['max_iter'],
-            enhanced=False)
+            enhanced=True)
 
         if len(self.reach_collection) > 0:
             reach_variables = list(self.reach_collection[0].metadata.keys())
@@ -310,3 +314,11 @@ class L2PixcToRiverTile(object):
         self.rivertile_product.reaches.history = history_string
         self.rivertile_product.reaches.xref_input_l2_hr_pixc_files = \
             self.pixc_file
+
+        # Fixup some other things
+        with netCDF4.Dataset(self.pixc_file, 'r') as ifp:
+            pol = ifp.polarization
+
+        self.rivertile_product.nodes.rdr_pol = \
+            np.ones(self.rivertile_product.nodes.rdr_pol.shape, dtype='S1')
+        self.rivertile_product.nodes.rdr_pol[:] = pol[0]

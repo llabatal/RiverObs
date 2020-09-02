@@ -3,6 +3,118 @@ Module for computing discharge for river reaches
 """
 import numpy as np
 
+from RiverObs.RiverObs import \
+    MISSING_VALUE_FLT, MISSING_VALUE_INT4, MISSING_VALUE_INT9
+
+def compute(reach, reach_height, reach_width, reach_slope):
+    """Computes the discharge models"""
+    area_fit_outputs = area(
+        reach_height, reach_width, reach.metadata['area_fits'])
+
+    d_x_area = area_fit_outputs[0]
+    if d_x_area < -10000000:
+        d_x_area = MISSING_VALUE_FLT
+
+    d_x_area_u = area_fit_outputs[3]
+    if d_x_area_u < 0:
+        d_x_area_u = MISSING_VALUE_FLT
+
+    outputs = {'d_x_area': d_x_area, 'd_x_area_u': d_x_area_u}
+    for key, models in reach.metadata['discharge_models'].items():
+
+        metro_ninf = models['MetroMan']['ninf']
+        metro_Abar = models['MetroMan']['Abar']
+        metro_p = models['MetroMan']['p']
+
+        if (reach_width > 0 and reach_slope > 0 and metro_Abar+d_x_area >= 0 and
+            metro_Abar > 0 and metro_ninf > 0):
+
+            metro_n = metro_ninf * (
+                (d_x_area+metro_Abar) / reach_width)**metro_p
+            metro_q = (
+                (d_x_area+metro_Abar)**(5/3) * reach_width**(-2/3) *
+                (reach_slope)**(1/2)) / metro_n
+        else:
+            metro_q = MISSING_VALUE_FLT
+
+        # 3: Compute BAM model
+        bam_n = models['BAM']['n']
+        bam_Abar = models['BAM']['Abar']
+
+        if (reach_width > 0 and reach_slope > 0 and bam_Abar+d_x_area >= 0 and
+            bam_Abar > 0 and bam_n > 0):
+
+            bam_q = (
+                (d_x_area+bam_Abar)**(5/3) * reach_width**(-2/3) *
+                (reach_slope)**(1/2)) / bam_n
+        else:
+            bam_q = MISSING_VALUE_FLT
+
+        # 4: Compute HiVDI model
+        hivdi_Abar = models['HiVDI']['Abar']
+        hivdi_alpha = models['HiVDI']['alpha']
+        hivdi_beta = models['HiVDI']['beta']
+
+        if (reach_width > 0 and reach_slope > 0 and hivdi_Abar+d_x_area >= 0 and
+            hivdi_Abar > 0 and hivdi_alpha > 0):
+            hivdi_n_inv = hivdi_alpha * (
+                (d_x_area+hivdi_Abar)/reach_width)**hivdi_beta
+            hivdi_q = (
+                (d_x_area+hivdi_Abar)**(5/3) * reach_width**(-2/3) *
+                (reach_slope)**(1/2)) * hivdi_n_inv
+        else:
+            hivdi_q = MISSING_VALUE_FLT
+
+        # 5: Compute MOMMA model
+        momma_B = models['MOMMA']['B']
+        momma_H = models['MOMMA']['H']
+        momma_Save = models['MOMMA']['Save']
+        momma_r = 2
+
+        momma_nb = 0.11 * momma_Save**0.18
+        log_factor = np.log10((momma_H-momma_B)/(reach_height-momma_B))
+        if reach_height <= momma_H:
+            momma_n = momma_nb*(1+log_factor)
+            log_check = log_factor > -1
+        else:
+            momma_n = momma_nb*(1-log_factor)
+            log_check = log_factor < 1
+
+        if (reach_width > 0 and reach_slope > 0 and momma_n > 0 and
+            momma_Save > 0 and momma_H > momma_B and momma_nb > 0 and log_check):
+
+            momma_q = (
+                ((reach_height - momma_B)*(momma_r/(1+momma_r)))**(5/3) *
+                reach_width * reach_slope**(1/2)) / momma_n
+        else:
+            momma_q = MISSING_VALUE_FLT
+
+        # 6: Compute SADS model
+        sads_Abar = models['SADS']['Abar']
+        sads_n = models['SADS']['n']
+
+        if (reach_width > 0 and reach_slope > 0 and sads_Abar+d_x_area >= 0 and
+            sads_Abar > 0 and sads_n > 0):
+            sads_q = (
+                (d_x_area+sads_Abar)**(5/3) * reach_width**(-2/3) *
+                (reach_slope)**(1/2)) / sads_n
+        else:
+            sads_q = MISSING_VALUE_FLT
+
+        if key == 'constrained':
+            outputs['metro_q_c'] = metro_q
+            outputs['bam_q_c'] = bam_q
+            outputs['hivdi_q_c'] = hivdi_q
+            outputs['momma_q_c'] = momma_q
+            outputs['sads_q_c'] = sads_q
+        elif key == 'unconstrained':
+            outputs['metro_q_uc'] = metro_q
+            outputs['bam_q_uc'] = bam_q
+            outputs['hivdi_q_uc'] = hivdi_q
+            outputs['momma_q_uc'] = momma_q
+            outputs['sads_q_uc'] = sads_q
+    return outputs
+
 def area(observed_height, observed_width, area_fits):
     """
     Provides a nicer interface for _area wrapping up the unpacking of prior
